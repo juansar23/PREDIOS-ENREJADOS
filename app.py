@@ -4,62 +4,70 @@ import zipfile
 import io
 import os
 
-st.set_page_config(page_title="Extractor de Fotos", layout="centered")
+st.set_page_config(page_title="Extractor ITA - Pro", page_icon="🏗️")
 
-st.title("📸 Extractor Dinámico de Fotos")
-st.markdown("Sube tus archivos para realizar el filtrado sin rutas fijas.")
+st.title("📸 Extractor de Fotos Pesadas (ZIP)")
+st.markdown("Optimizado para archivos de más de 500MB.")
 
-# --- SECCIÓN DE CARGA DE ARCHIVOS ---
-# Esto reemplaza las rutas fijas y permite subir archivos desde tu PC
-archivo_zip = st.file_uploader("1. Selecciona el archivo ZIP con las fotos", type=["zip"])
-archivo_excel = st.file_uploader("2. Selecciona el archivo Excel con los IDs", type=["xlsx", "xls"])
+# --- CARGA DINÁMICA ---
+with st.sidebar:
+    st.header("Archivos")
+    # Aumentamos el límite de carga (aunque Streamlit Cloud suele permitir hasta 1GB por archivo)
+    archivo_zip = st.file_uploader("1. Sube el ZIP (Máx 1GB)", type=["zip"])
+    archivo_excel = st.file_uploader("2. Sube el Excel de IDs", type=["xlsx", "xls"])
 
 if archivo_zip and archivo_excel:
     try:
-        # Leemos el Excel que acabas de subir
+        # Leer Excel
         df = pd.read_excel(archivo_excel)
+        columna_id = st.selectbox("Selecciona la columna de IDs:", df.columns)
         
-        # Permitimos elegir la columna dinámicamente
-        columna_id = st.selectbox("Selecciona la columna con los nombres de las fotos:", df.columns)
+        # Limpiar IDs y convertirlos en un set (es mucho más rápido para buscar)
+        ids_raw = df[columna_id].astype(str).unique().tolist()
+        fotos_a_buscar = {f if f.lower().endswith('.jpg') else f"{f}.jpg" for f in ids_raw}
         
-        # Procesamos la lista de nombres
-        lista_nombres = df[columna_id].astype(str).unique().tolist()
-        fotos_a_buscar = {f if f.lower().endswith('.jpg') else f"{f}.jpg" for f in lista_nombres}
+        st.info(f"🔍 Buscando {len(fotos_a_buscar)} fotos dentro del ZIP de 550MB...")
 
         if st.button("🚀 Iniciar Extracción"):
-            buffer_zip_nuevo = io.BytesIO()
+            buffer_salida = io.BytesIO()
             barrita = st.progress(0)
+            status = st.empty()
             
+            # Abrimos el ZIP original
             with zipfile.ZipFile(archivo_zip, 'r') as z_in:
                 nombres_en_zip = z_in.namelist()
-                # Mapa para encontrar archivos aunque estén en subcarpetas dentro del ZIP
-                mapa_archivos = {os.path.basename(f): f for f in nombres_en_zip}
+                # Mapa de nombres para no importar las carpetas internas
+                mapa_archivos = {os.path.basename(f): f for f in nombres_en_zip if not f.endswith('/')}
                 
-                with zipfile.ZipFile(buffer_zip_nuevo, 'w') as z_out:
+                # Creamos el nuevo ZIP
+                with zipfile.ZipFile(buffer_salida, 'w', compression=zipfile.ZIP_DEFLATED) as z_out:
                     encontrados = 0
-                    total = len(fotos_buscadas)
+                    total = len(fotos_a_buscar)
                     
-                    for i, foto in enumerate(fotos_buscadas):
+                    for i, foto in enumerate(fotos_a_buscar):
                         if foto in mapa_archivos:
                             ruta_interna = mapa_archivos[foto]
-                            z_out.writestr(foto, z_in.read(ruta_interna))
+                            # Leemos solo el pedazo de archivo necesario
+                            with z_in.open(ruta_interna) as f_in:
+                                z_out.writestr(foto, f_in.read())
                             encontrados += 1
                         
-                        # Actualizar progreso
-                        barrita.progress((i + 1) / total)
+                        # Actualizar progreso cada 10 fotos para no saturar la web
+                        if i % 10 == 0 or i == total - 1:
+                            barrita.progress((i + 1) / total)
+                            status.text(f"Procesado: {i+1}/{total}")
+
+            status.success(f"✅ ¡Listo! Encontradas {encontrados} fotos.")
             
-            st.success(f"✅ Proceso terminado. Se encontraron {encontrados} de {len(fotos_buscadas)} fotos.")
-            
-            # Botón para descargar el resultado
+            # Botón de descarga
             st.download_button(
-                label="📥 Descargar Fotos Filtradas",
-                data=buffer_zip_nuevo.getvalue(),
-                file_name="fotos_extraidas.zip",
+                label="📥 Descargar ZIP Filtrado",
+                data=buffer_salida.getvalue(),
+                file_name="fotos_ita_filtradas.zip",
                 mime="application/zip"
             )
 
     except Exception as e:
-        st.error(f"Error al procesar los archivos: {e}")
-
+        st.error(f"Error: {e}")
 else:
-    st.info("Esperando que subas el ZIP y el Excel...")
+    st.warning("👈 Por favor, carga los archivos en el menú lateral.")
