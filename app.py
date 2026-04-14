@@ -6,7 +6,7 @@ import pandas as pd
 ruta_fotos = './todas_mis_fotos'     # Carpeta donde están los originales
 ruta_destino = './fotos_seleccionadas' 
 excel_lista = 'lista_a_extraer.xlsx' # Tu archivo Excel
-columna_id = 'ID'                   # Nombre de la columna con los números
+columna_id = 'CUENTA'                   # Nombre de la columna con los números
 
 # Crear carpeta de destino
 os.makedirs(ruta_destino, exist_ok=True)
